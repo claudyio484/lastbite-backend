@@ -1,0 +1,457 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  MERCHANT_OWNER
+  MERCHANT_ADMIN
+  MERCHANT_STAFF
+  CUSTOMER
+}
+
+enum SubscriptionPlan {
+  FREE
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  INACTIVE
+  CANCELLED
+  PAST_DUE
+}
+
+enum OrderStatus {
+  NEW
+  PREPARING
+  READY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  RETURNED
+  CANCELLED
+}
+
+enum OrderType {
+  DELIVERY
+  PICKUP
+}
+
+enum CancellationReason {
+  OUT_OF_STOCK
+  CUSTOMER_REQUEST
+  PRICING_ERROR
+  UNABLE_TO_DELIVER
+  DUPLICATE_ORDER
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  NOON_PAY
+  TALABAT_PAY
+  ZINA
+  CASH
+  BANK_TRANSFER
+  CARD
+}
+
+enum ProductStatus {
+  ACTIVE
+  EXPIRED
+  DRAFT
+  INACTIVE
+}
+
+model Tenant {
+  id                 String    @id @default(uuid())
+  name               String
+  slug               String    @unique
+  email              String    @unique
+  phone              String?
+  logo               String?
+  description        String?
+  address            String?
+  city               String    @default("Dubai")
+  country            String    @default("UAE")
+  isActive           Boolean   @default(true)
+  storeStatus        Boolean   @default(true)
+  tradeLicence       String?
+  tradeLicenceExpiry DateTime?
+  emiratesIdExpiry   DateTime?
+  language           String    @default("en")
+  darkMode           Boolean   @default(false)
+  emailNotifications Boolean   @default(true)
+  pushNotifications  Boolean   @default(true)
+  marketingUpdates   Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  subscription   Subscription?
+  users          User[]
+  products       Product[]
+  categories     Category[]
+  orders         Order[]
+  payments       Payment[]
+  conversations  Conversation[]
+  apiKeys        ApiIntegration[]
+  notifications  Notification[]
+  kyc            MerchantKyc?
+  auditLogs     AuditLog[]
+  invoices      Invoice[]
+
+  @@map("tenants")
+}
+
+model Subscription {
+  id              String             @id @default(uuid())
+  tenantId        String             @unique
+  plan            SubscriptionPlan   @default(FREE)
+  status          SubscriptionStatus @default(TRIAL)
+  commissionRate  Float              @default(0.05)
+  priceAed        Float              @default(0)
+  trialEndsAt     DateTime?
+  startDate       DateTime           @default(now())
+  endDate         DateTime?
+  nextBillingDate DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model User {
+  id          String    @id @default(uuid())
+  tenantId    String?
+  email       String    @unique
+  password    String
+  firstName   String
+  lastName    String
+  phone       String?
+  avatar      String?
+  jobTitle    String?
+  role        Role      @default(CUSTOMER)
+  isActive    Boolean   @default(true)
+  isVerified  Boolean   @default(false)
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant        Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders        Order[]
+  messages      Message[]
+  auditLogs     AuditLog[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model Category {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  slug      String
+  createdAt DateTime @default(now())
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([tenantId, slug])
+  @@map("categories")
+}
+
+model Product {
+  id            String        @id @default(uuid())
+  tenantId      String
+  categoryId    String?
+  name          String
+  description   String?
+  sku           String?
+  barcode       String?
+  originalPrice Float
+  discountPct   Float         @default(0)
+  finalPrice    Float
+  images        String[]      @default([])
+  stock         Int           @default(0)
+  minStock      Int           @default(0)
+  isFeatured    Boolean       @default(false)
+  status        ProductStatus @default(ACTIVE)
+  expiryDate    DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category   Category?   @relation(fields: [categoryId], references: [id])
+  orderItems OrderItem[]
+
+  @@unique([tenantId, sku])
+  @@map("products")
+}
+
+model Order {
+  id                 String              @id @default(uuid())
+  tenantId           String
+  customerId         String?
+  orderNumber        String              @unique
+  status             OrderStatus         @default(NEW)
+  type               OrderType           @default(DELIVERY)
+  subtotal           Float
+  discountAmount     Float               @default(0)
+  taxAmount          Float               @default(0)
+  totalAmount        Float
+  commissionAmount   Float               @default(0)
+  cancellationReason CancellationReason?
+  notes              String?
+  shippingAddress    Json?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer User?       @relation(fields: [customerId], references: [id])
+  items    OrderItem[]
+  payment  Payment?
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String  @id @default(uuid())
+  orderId     String
+  productId   String
+  productName String
+  quantity    Int
+  unitPrice   Float
+  totalPrice  Float
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
+
+model Payment {
+  id               String        @id @default(uuid())
+  tenantId         String
+  orderId          String        @unique
+  amount           Float
+  commissionAmount Float         @default(0)
+  currency         String        @default("AED")
+  method           PaymentMethod @default(CARD)
+  status           PaymentStatus @default(PENDING)
+  gatewayRef       String?
+  gatewayResponse  Json?
+  paidAt           DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order  Order  @relation(fields: [orderId], references: [id])
+
+  @@map("payments")
+}
+
+model Invoice {
+  id            String    @id @default(uuid())
+  tenantId      String
+  invoiceNumber String    @unique
+  amount        Float
+  currency      String    @default("AED")
+  status        String    @default("PENDING")
+  paidAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("invoices")
+}
+
+model Conversation {
+  id         String    @id @default(uuid())
+  tenantId   String
+  customerId String
+  isOnline   Boolean   @default(false)
+  lastMsgAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@unique([tenantId, customerId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String
+  senderId       String
+  body           String
+  isRead         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id])
+
+  @@map("messages")
+}
+
+model ApiIntegration {
+  id         String    @id @default(uuid())
+  tenantId   String
+  name       String
+  apiUrl     String
+  apiKey     String
+  isActive   Boolean   @default(true)
+  lastSyncAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("api_integrations")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  tenantId  String?
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  details   Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id])
+  user   User?   @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────
+// NOTIFICATIONS
+// ─────────────────────────────────────────
+
+enum NotificationType {
+  NEW_ORDER
+  LOW_STOCK
+  NEW_MESSAGE
+  PRODUCT_EXPIRING
+  SUBSCRIPTION
+  SYSTEM
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  tenantId  String
+  type      NotificationType
+  title     String
+  body      String
+  entityId  String?
+  isRead    Boolean          @default(false)
+  priority  String           @default("normal")
+  createdAt DateTime         @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// ─────────────────────────────────────────
+// KYC / ONBOARDING
+// ─────────────────────────────────────────
+
+enum KycStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum IssuingAuthority {
+  DED
+  ABU_DHABI_DED
+  SHARJAH_SEDD
+  DMCC_FREEZONE
+  DIFC
+  OTHER
+}
+
+model MerchantKyc {
+  id                    String           @id @default(uuid())
+  tenantId              String           @unique
+  registeredCompanyName String?
+  storeName             String?
+  tradeLicenceNumber    String?
+  issuingAuthority      IssuingAuthority @default(DED)
+  vatTrn                String?
+  licenceExpiryDate     DateTime?
+  tradeLicenceUrl       String?
+  emiratesIdUrl         String?
+  vatCertificateUrl     String?
+  bankAccountHolder     String?
+  bankName              String?
+  iban                  String?
+  status                KycStatus        @default(PENDING)
+  reviewNotes           String?
+  submittedAt           DateTime?
+  reviewedAt            DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("merchant_kyc")
+}
+
+// ─────────────────────────────────────────
+// OTP & PASSWORD RESET
+// ─────────────────────────────────────────
+
+model OtpCode {
+  id        String   @id @default(uuid())
+  phone     String
+  code      String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("otp_codes")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("password_reset_tokens")
+}
