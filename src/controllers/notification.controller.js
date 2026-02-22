@@ -61,6 +61,12 @@ const getPreview = async (req, res) => {
 // PATCH /api/notifications/:id/read
 const markAsRead = async (req, res) => {
   try {
+    // Verify the notification belongs to this tenant
+    const notification = await prisma.notification.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId },
+    });
+    if (!notification) return res.status(404).json({ success: false, message: 'Notification not found' });
+
     await prisma.notification.update({
       where: { id: req.params.id },
       data: { isRead: true },

@@ -112,6 +112,12 @@ const createUser = async (req, res) => {
 // PUT /api/users/:id
 const updateUser = async (req, res) => {
   try {
+    // Verify user belongs to this tenant
+    const existing = await prisma.user.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId },
+    });
+    if (!existing) return res.status(404).json({ success: false, message: 'User not found' });
+
     const { firstName, lastName, phone, role, jobTitle, isActive } = req.body;
 
     const user = await prisma.user.update({
@@ -136,6 +142,12 @@ const deleteUser = async (req, res) => {
     if (req.params.id === req.user.id) {
       return res.status(400).json({ success: false, message: 'Cannot delete your own account' });
     }
+
+    // Verify user belongs to this tenant
+    const existing = await prisma.user.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId },
+    });
+    if (!existing) return res.status(404).json({ success: false, message: 'User not found' });
 
     await prisma.user.update({
       where: { id: req.params.id },

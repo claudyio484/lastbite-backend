@@ -137,56 +137,77 @@ const createOrder = async (req, res) => {
     const { customerId, items, type = 'DELIVERY', shippingAddress, notes, lat, lng } = req.body;
     const tenantId = req.tenantId;
 
-    // Get products and check stock
-    const productIds = items.map(i => i.productId);
-    const products = await prisma.product.findMany({
-      where: { id: { in: productIds }, tenantId, status: 'ACTIVE' },
-    });
-
-    if (products.length !== items.length) {
-      return res.status(400).json({ success: false, message: 'Some products are unavailable' });
+    if (!items || !items.length) {
+      return res.status(400).json({ success: false, message: 'Order must contain at least one item' });
     }
 
-    let subtotal = 0;
-    const orderItems = items.map(item => {
-      const product = products.find(p => p.id === item.productId);
-      const total = product.finalPrice * item.quantity;
-      subtotal += total;
-      return {
-        productId: item.productId,
-        productName: product.name,
-        quantity: item.quantity,
-        unitPrice: product.finalPrice,
-        totalPrice: total,
-      };
-    });
+    // Use a transaction to ensure stock is checked and decremented atomically
+    const order = await prisma.$transaction(async (tx) => {
+      // Get products and check stock
+      const productIds = items.map(i => i.productId);
+      const products = await tx.product.findMany({
+        where: { id: { in: productIds }, tenantId, status: 'ACTIVE' },
+      });
 
-    // Get commission rate
-    const subscription = await prisma.subscription.findUnique({ where: { tenantId } });
-    const commissionRate = subscription?.plan === 'FREE' ? (subscription?.commissionRate || 0.05) : 0;
-    const commissionAmount = subtotal * commissionRate;
+      if (products.length !== items.length) {
+        throw new Error('Some products are unavailable');
+      }
 
-    const order = await prisma.order.create({
-      data: {
-        tenantId,
-        customerId,
-        orderNumber: generateOrderNumber(),
-        type,
-        subtotal,
-        totalAmount: subtotal,
-        commissionAmount,
-        shippingAddress,
-        lat: lat || null,
-        lng: lng || null,
-        notes,
-        items: { create: orderItems },
-      },
-      include: { items: true, customer: { select: { firstName: true, lastName: true } } },
+      let subtotal = 0;
+      const orderItems = [];
+
+      for (const item of items) {
+        const product = products.find(p => p.id === item.productId);
+        if (product.stock < item.quantity) {
+          throw new Error(`Insufficient stock for ${product.name}. Available: ${product.stock}`);
+        }
+        const total = product.finalPrice * item.quantity;
+        subtotal += total;
+        orderItems.push({
+          productId: item.productId,
+          productName: product.name,
+          quantity: item.quantity,
+          unitPrice: product.finalPrice,
+          totalPrice: total,
+        });
+
+        // Decrement stock
+        await tx.product.update({
+          where: { id: product.id },
+          data: { stock: { decrement: item.quantity } },
+        });
+      }
+
+      // Get commission rate from subscription
+      const subscription = await tx.subscription.findUnique({ where: { tenantId } });
+      const commissionRate = subscription?.commissionRate || 0;
+      const commissionAmount = subtotal * commissionRate;
+
+      return tx.order.create({
+        data: {
+          tenantId,
+          customerId,
+          orderNumber: generateOrderNumber(),
+          type,
+          subtotal,
+          totalAmount: subtotal,
+          commissionAmount,
+          shippingAddress,
+          lat: lat || null,
+          lng: lng || null,
+          notes,
+          items: { create: orderItems },
+        },
+        include: { items: true, customer: { select: { firstName: true, lastName: true } } },
+      });
     });
 
     res.status(201).json({ success: true, data: order });
   } catch (err) {
     console.error(err);
+    if (err.message.includes('unavailable') || err.message.includes('Insufficient stock')) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
