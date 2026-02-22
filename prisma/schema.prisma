@@ -231,6 +231,8 @@ model Order {
   cancellationReason CancellationReason?
   notes              String?
   shippingAddress    Json?
+  lat                Float?
+  lng                Float?
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 
@@ -245,14 +247,14 @@ model Order {
 model OrderItem {
   id          String  @id @default(uuid())
   orderId     String
-  productId   String
+  productId   String?
   productName String
   quantity    Int
   unitPrice   Float
   totalPrice  Float
 
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id])
+  product Product? @relation(fields: [productId], references: [id])
 
   @@map("order_items")
 }
