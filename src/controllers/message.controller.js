@@ -31,6 +31,12 @@ const getConversations = async (req, res) => {
 // GET /api/messages/conversations/:id
 const getMessages = async (req, res) => {
   try {
+    // Verify conversation belongs to this tenant
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId },
+    });
+    if (!conversation) return res.status(404).json({ success: false, message: 'Conversation not found' });
+
     const messages = await prisma.message.findMany({
       where: { conversationId: req.params.id },
       include: { sender: { select: { firstName: true, lastName: true, avatar: true, role: true } } },
@@ -52,7 +58,16 @@ const getMessages = async (req, res) => {
 // POST /api/messages/conversations/:id/send
 const sendMessage = async (req, res) => {
   try {
+    // Verify conversation belongs to this tenant
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId },
+    });
+    if (!conversation) return res.status(404).json({ success: false, message: 'Conversation not found' });
+
     const { body } = req.body;
+    if (!body || !body.trim()) {
+      return res.status(400).json({ success: false, message: 'Message body is required' });
+    }
 
     const message = await prisma.message.create({
       data: {

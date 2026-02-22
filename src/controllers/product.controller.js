@@ -57,6 +57,10 @@ const createProduct = async (req, res) => {
       isFeatured = false, expiryDate, images = [], status = 'ACTIVE',
     } = req.body;
 
+    if (!name || originalPrice === undefined) {
+      return res.status(400).json({ success: false, message: 'Name and originalPrice are required' });
+    }
+
     const finalPrice = originalPrice - (originalPrice * discountPct / 100);
 
     const product = await prisma.product.create({
@@ -95,11 +99,17 @@ const createProduct = async (req, res) => {
 // PUT /api/products/:id
 const updateProduct = async (req, res) => {
   try {
+    // Verify product belongs to this tenant
+    const existing = await prisma.product.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId },
+    });
+    if (!existing) return res.status(404).json({ success: false, message: 'Product not found' });
+
     const { originalPrice, discountPct, ...rest } = req.body;
     let updateData = { ...rest };
 
     if (originalPrice !== undefined) {
-      const disc = discountPct ?? 0;
+      const disc = discountPct ?? existing.discountPct ?? 0;
       updateData.originalPrice = originalPrice;
       updateData.discountPct = disc;
       updateData.finalPrice = originalPrice - (originalPrice * disc / 100);
@@ -126,7 +136,18 @@ const updateProduct = async (req, res) => {
 // DELETE /api/products/:id
 const deleteProduct = async (req, res) => {
   try {
+    // Verify product belongs to this tenant
+    const existing = await prisma.product.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId },
+    });
+    if (!existing) return res.status(404).json({ success: false, message: 'Product not found' });
+
     await prisma.product.delete({ where: { id: req.params.id } });
+
+    await prisma.auditLog.create({
+      data: { tenantId: req.tenantId, userId: req.user.id, action: 'DELETE_PRODUCT', entity: 'product', entityId: req.params.id },
+    });
+
     res.json({ success: true, message: 'Product deleted' });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Server error' });

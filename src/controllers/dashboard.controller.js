@@ -16,7 +16,7 @@ const getStats = async (req, res) => {
       ordersToday,
       expiringProducts,
       newOrders,
-      lowStock,
+      lowStockProducts,
       salesPerformance,
     ] = await Promise.all([
       // Today's revenue
@@ -34,9 +34,10 @@ const getStats = async (req, res) => {
       }),
       // New orders (unaccepted)
       prisma.order.count({ where: { tenantId, status: 'NEW' } }),
-      // Low stock items
-      prisma.product.count({
-        where: { tenantId, status: 'ACTIVE', stock: { lte: prisma.product.fields.minStock } },
+      // Low stock items - fetch and filter client-side since Prisma can't compare two columns
+      prisma.product.findMany({
+        where: { tenantId, status: 'ACTIVE' },
+        select: { stock: true, minStock: true },
       }),
       // Sales performance last 7 days
       prisma.$queryRaw`
@@ -49,6 +50,8 @@ const getStats = async (req, res) => {
         ORDER BY date ASC
       `,
     ]);
+
+    const lowStock = lowStockProducts.filter(p => p.stock <= p.minStock).length;
 
     res.json({
       success: true,
@@ -74,16 +77,18 @@ const getActionNeeded = async (req, res) => {
     const tenantId = req.tenantId;
     const in48h = new Date(Date.now() + 48 * 60 * 60 * 1000);
 
-    const [expiringCount, lowStockCount, newOrdersCount] = await Promise.all([
+    const [expiringCount, lowStockProducts, newOrdersCount] = await Promise.all([
       prisma.product.count({
         where: { tenantId, expiryDate: { gte: new Date(), lte: in48h }, status: 'ACTIVE' },
       }),
       prisma.product.findMany({
         where: { tenantId, status: 'ACTIVE' },
         select: { stock: true, minStock: true },
-      }).then(products => products.filter(p => p.stock <= p.minStock).length),
+      }),
       prisma.order.count({ where: { tenantId, status: 'NEW' } }),
     ]);
+
+    const lowStockCount = lowStockProducts.filter(p => p.stock <= p.minStock).length;
 
     res.json({
       success: true,
