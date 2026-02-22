@@ -134,7 +134,7 @@ const updateStatus = async (req, res) => {
 // POST /api/orders (create order - used by client app)
 const createOrder = async (req, res) => {
   try {
-    const { customerId, items, type = 'DELIVERY', shippingAddress, notes } = req.body;
+    const { customerId, items, type = 'DELIVERY', shippingAddress, notes, lat, lng } = req.body;
     const tenantId = req.tenantId;
 
     // Get products and check stock
@@ -176,6 +176,8 @@ const createOrder = async (req, res) => {
         totalAmount: subtotal,
         commissionAmount,
         shippingAddress,
+        lat: lat || null,
+        lng: lng || null,
         notes,
         items: { create: orderItems },
       },
