@@ -7,6 +7,9 @@ const rateLimit = require('express-rate-limit');
 
 const app = express();
 
+// Trust proxy (required for Vercel / reverse-proxy environments)
+app.set('trust proxy', 1);
+
 // ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(helmet());
 const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
