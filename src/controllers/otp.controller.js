@@ -91,7 +91,11 @@ const sendEmailOtp = async (req, res) => {
     const firstName = user?.firstName || 'there';
 
     const template = verificationOtpEmail(code, firstName);
-    await sendEmail({ to: email, subject: template.subject, html: template.html });
+    try {
+      await sendEmail({ to: email, subject: template.subject, html: template.html });
+    } catch (emailErr) {
+      console.error('Email send failed (OTP still created):', emailErr.message);
+    }
 
     console.log(`Email OTP for ${email}: ${code}`);
 
@@ -171,7 +175,11 @@ const forgotPassword = async (req, res) => {
     const resetUrl = `${process.env.FRONTEND_URL}/#/reset-password?token=${token}`;
 
     const template = passwordResetEmail(resetUrl, user.firstName);
-    await sendEmail({ to: email, subject: template.subject, html: template.html });
+    try {
+      await sendEmail({ to: email, subject: template.subject, html: template.html });
+    } catch (emailErr) {
+      console.error('Email send failed (reset token still created):', emailErr.message);
+    }
 
     console.log(`Password reset link for ${email}: ${resetUrl}`);
 
