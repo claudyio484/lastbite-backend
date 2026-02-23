@@ -9,8 +9,20 @@ const app = express();
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(helmet());
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: (origin, cb) => {
+    // Allow requests with no origin (curl, server-to-server)
+    if (!origin) return cb(null, true);
+    if (allowedOrigins.some(o => origin === o || origin.endsWith('.vercel.app'))) {
+      return cb(null, true);
+    }
+    cb(new Error('Not allowed by CORS'));
+  },
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
