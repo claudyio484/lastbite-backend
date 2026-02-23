@@ -140,6 +140,28 @@ const register = async (req, res) => {
       },
     });
 
+    // Send verification OTP email
+    try {
+      const { sendEmail } = require('../config/mailer');
+      const { verificationOtpEmail } = require('../utils/emailTemplates');
+      const code = Math.floor(1000 + Math.random() * 9000).toString();
+
+      await prisma.otpCode.create({
+        data: {
+          email: result.user.email,
+          code,
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        },
+      });
+
+      const template = verificationOtpEmail(code, firstName);
+      await sendEmail({ to: email, subject: template.subject, html: template.html });
+      console.log(`Verification OTP for ${email}: ${code}`);
+    } catch (emailErr) {
+      console.error('Failed to send verification email:', emailErr);
+      // Don't fail registration if email fails
+    }
+
     res.status(201).json({
       success: true,
       message: 'Account created successfully',
