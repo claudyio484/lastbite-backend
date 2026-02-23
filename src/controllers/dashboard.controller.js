@@ -41,12 +41,12 @@ const getStats = async (req, res) => {
       }),
       // Sales performance last 7 days
       prisma.$queryRaw`
-        SELECT DATE(created_at) as date, SUM(total_amount) as revenue
+        SELECT DATE("createdAt") as date, SUM("totalAmount") as revenue
         FROM orders
-        WHERE tenant_id = ${tenantId}
+        WHERE "tenantId" = ${tenantId}
           AND status NOT IN ('CANCELLED', 'RETURNED')
-          AND created_at >= NOW() - INTERVAL '7 days'
-        GROUP BY DATE(created_at)
+          AND "createdAt" >= NOW() - INTERVAL '7 days'
+        GROUP BY DATE("createdAt")
         ORDER BY date ASC
       `,
     ]);

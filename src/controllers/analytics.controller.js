@@ -39,14 +39,14 @@ const getOverview = async (req, res) => {
     // Revenue overview chart (daily)
     const revenueChart = await prisma.$queryRaw`
       SELECT
-        TO_CHAR(DATE(created_at AT TIME ZONE 'Asia/Dubai'), 'Dy') as day,
-        COALESCE(SUM(total_amount), 0) as revenue
+        TO_CHAR(DATE("createdAt" AT TIME ZONE 'Asia/Dubai'), 'Dy') as day,
+        COALESCE(SUM("totalAmount"), 0) as revenue
       FROM orders
-      WHERE tenant_id = ${tenantId}
+      WHERE "tenantId" = ${tenantId}
         AND status = 'DELIVERED'
-        AND created_at >= NOW() - INTERVAL '7 days'
-      GROUP BY DATE(created_at AT TIME ZONE 'Asia/Dubai')
-      ORDER BY DATE(created_at AT TIME ZONE 'Asia/Dubai') ASC
+        AND "createdAt" >= NOW() - INTERVAL '7 days'
+      GROUP BY DATE("createdAt" AT TIME ZONE 'Asia/Dubai')
+      ORDER BY DATE("createdAt" AT TIME ZONE 'Asia/Dubai') ASC
     `;
 
     res.json({
