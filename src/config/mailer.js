@@ -1,14 +1,33 @@
 const nodemailer = require('nodemailer');
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: false, // true for 465, false for 587 (STARTTLS)
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+// Use Gmail service shorthand — handles host/port/secure automatically
+// Falls back to manual SMTP config if SMTP_HOST is explicitly set to something other than gmail
+const transportConfig = (process.env.SMTP_HOST && process.env.SMTP_HOST !== 'smtp.gmail.com')
+  ? {
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || '587'),
+      secure: process.env.SMTP_PORT === '465',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    }
+  : {
+      service: 'gmail',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    };
+
+let transporter = null;
+
+const getTransporter = () => {
+  if (!transporter) {
+    transporter = nodemailer.createTransport(transportConfig);
+  }
+  return transporter;
+};
 
 const sendEmail = async ({ to, subject, html }) => {
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
@@ -17,7 +36,7 @@ const sendEmail = async ({ to, subject, html }) => {
     return null;
   }
 
-  const info = await transporter.sendMail({
+  const info = await getTransporter().sendMail({
     from: `"LastBite" <${process.env.SMTP_USER}>`,
     to,
     subject,
