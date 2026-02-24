@@ -24,13 +24,15 @@ const parseFile = async (req, res, next) => {
       req.file.mimetype,
     );
 
-    // Return first 10 rows as preview so the client can build column mapping UI
+    // Return ALL rows so the client can send them to /validate and /confirm.
+    // Also include first 10 as preview_rows for backwards compatibility.
     const previewRows = rows.slice(0, 10);
 
     return res.json({
       success: true,
       data: {
         columns,
+        rows,
         preview_rows: previewRows,
         total_rows: totalRows,
       },
