@@ -51,12 +51,38 @@ app.use('/api/analytics',     require('./routes/analytics.routes'));
 app.use('/api/notifications',  require('./routes/notification.routes'));
 app.use('/api/kyc',            require('./routes/kyc.routes'));
 app.use('/api/admin',          require('./routes/admin.routes'));
+app.use('/api/v1/products/import', require('./routes/import.routes'));
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
 
 // ─── Error handler ────────────────────────────────────────────────────────────
 app.use((err, req, res, next) => {
+  // Import pipeline custom errors
+  if (err.name === 'ImportParseError') {
+    return res.status(422).json({
+      success: false,
+      error: 'PARSE_FAILED',
+      message: err.message,
+      details: err.details || null,
+    });
+  }
+  if (err.name === 'ImportValidationError') {
+    return res.status(422).json({
+      success: false,
+      error: 'VALIDATION_FAILED',
+      errors: err.errors,
+    });
+  }
+  if (err.name === 'ImportConfirmError') {
+    return res.status(500).json({
+      success: false,
+      error: 'CONFIRM_FAILED',
+      message: err.message,
+      batch_id: err.batchId || null,
+    });
+  }
+
   console.error(err.stack);
   res.status(err.status || 500).json({
     success: false,

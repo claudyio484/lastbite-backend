@@ -110,8 +110,11 @@ model Tenant {
   apiKeys        ApiIntegration[]
   notifications  Notification[]
   kyc            MerchantKyc?
-  auditLogs     AuditLog[]
-  invoices      Invoice[]
+  auditLogs      AuditLog[]
+  invoices       Invoice[]
+  importBatches  ImportBatch[]
+  deals          Deal[]
+  discountRules  StoreDiscountRules?
 
   @@map("tenants")
 }
@@ -457,4 +460,87 @@ model PasswordResetToken {
   createdAt DateTime @default(now())
 
   @@map("password_reset_tokens")
+}
+
+// ─────────────────────────────────────────
+// PRODUCT IMPORT PIPELINE
+// ─────────────────────────────────────────
+
+enum ImportStatus {
+  PROCESSING
+  SUCCESS
+  PARTIAL_ERROR
+  FAILED
+}
+
+enum DealStatus {
+  DRAFT
+  PUBLISHED
+  EXPIRED
+  SOLD_OUT
+}
+
+enum DealSource {
+  CSV_IMPORT
+  MANUAL
+  API_SYNC
+}
+
+model ImportBatch {
+  id             String       @id @default(uuid())
+  tenantId       String
+  status         ImportStatus @default(PROCESSING)
+  totalRows      Int
+  retainedRows   Int
+  skippedRows    Int
+  publishedCount Int          @default(0)
+  draftCount     Int          @default(0)
+  errors         Json         // ParseError[]
+  createdAt      DateTime     @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deals  Deal[]
+
+  @@index([tenantId])
+  @@map("import_batches")
+}
+
+model Deal {
+  id            String      @id @default(uuid())
+  tenantId      String
+  importBatchId String?
+  sku           String
+  productName   String
+  barcode       String?
+  expiryDate    DateTime
+  daysToExpiry  Int
+  originalPrice Decimal     @db.Decimal(10, 2)
+  discountPct   Int
+  finalPrice    Decimal     @db.Decimal(10, 2)
+  quantity      Int
+  status        DealStatus  @default(DRAFT)
+  source        DealSource  @default(CSV_IMPORT)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  batch  ImportBatch? @relation(fields: [importBatchId], references: [id])
+
+  @@unique([tenantId, sku, expiryDate])
+  @@index([tenantId, status])
+  @@index([tenantId, daysToExpiry])
+  @@map("deals")
+}
+
+model StoreDiscountRules {
+  id            String   @id @default(uuid())
+  tenantId      String   @unique
+  rules         Json     // DiscountRule[]
+  roundPrices   Boolean  @default(false)
+  defaultWindow Int      @default(7)
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("store_discount_rules")
 }
