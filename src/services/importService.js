@@ -536,6 +536,27 @@ async function confirmImport(tenantId, payload, prisma) {
   let draftCount = 0;
 
   try {
+    // Pre-compute category lookups OUTSIDE the transaction to reduce tx duration.
+    // Collect unique category names from the deals.
+    const categoryMap = new Map(); // slug -> { id }
+    const uniqueCategories = new Map(); // slug -> name
+    for (const deal of previews) {
+      if (deal.category) {
+        const slug = deal.category.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        uniqueCategories.set(slug, deal.category);
+      }
+    }
+
+    // Upsert categories outside the main transaction (they are idempotent)
+    for (const [slug, name] of uniqueCategories) {
+      const cat = await prisma.category.upsert({
+        where: { tenantId_slug: { tenantId, slug } },
+        create: { tenantId, name, slug },
+        update: {},
+      });
+      categoryMap.set(slug, cat.id);
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       // 4a. Create ImportBatch
       const batch = await tx.importBatch.create({
@@ -589,16 +610,11 @@ async function confirmImport(tenantId, payload, prisma) {
         });
 
         // Also upsert into Product table so imported items appear in product listing
-        // Find or create category if provided
+        // Resolve categoryId from pre-computed map
         let categoryId = null;
         if (deal.category) {
           const slug = deal.category.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-          const cat = await tx.category.upsert({
-            where: { tenantId_slug: { tenantId, slug } },
-            create: { tenantId, name: deal.category, slug },
-            update: {},
-          });
-          categoryId = cat.id;
+          categoryId = categoryMap.get(slug) || null;
         }
 
         await tx.product.upsert({
@@ -659,6 +675,9 @@ async function confirmImport(tenantId, payload, prisma) {
       });
 
       return { batchId: batch.id };
+    }, {
+      maxWait: 60000,  // max time to acquire the transaction (60s)
+      timeout: 60000,  // max time for the transaction to complete (60s)
     });
 
     return {
