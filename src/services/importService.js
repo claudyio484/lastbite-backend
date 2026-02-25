@@ -133,11 +133,11 @@ function tryParseDate(raw) {
  * - Deduplicates by (sku, expiryDate): merges quantities, keeps lowest price
  *
  * @param {Array<Record<string, string>>} rows   Raw rows from parseFile
- * @param {{ sku: string, expiry_date: string, quantity: string, price: string, name: string, barcode?: string }} mapping
+ * @param {{ sku: string, expiry_date: string, quantity: string, price: string, name: string, barcode?: string, category?: string }} mapping
  * @param {Date} today  Reference date for days_to_expiry calculation
  * @returns {{ normalized: NormalizedRow[], errors: ParseError[] }}
  *
- * @typedef {{ sku: string, productName: string, barcode: string | null, expiryDate: Date, daysToExpiry: number, quantity: number, originalPrice: number }} NormalizedRow
+ * @typedef {{ sku: string, productName: string, barcode: string | null, category: string | null, expiryDate: Date, daysToExpiry: number, quantity: number, originalPrice: number }} NormalizedRow
  * @typedef {{ row: number, field: string, value: string, error: string }} ParseError
  */
 function normalizeRows(rows, mapping, today) {
@@ -166,6 +166,9 @@ function normalizeRows(rows, mapping, today) {
 
     // ── Barcode (optional) ──
     const barcode = mapping.barcode ? (raw[mapping.barcode] ?? '').trim() || null : null;
+
+    // ── Category (optional) ──
+    const category = mapping.category ? (raw[mapping.category] ?? '').trim() || null : null;
 
     // ── Expiry date ──
     const rawDate = (raw[mapping.expiry_date] ?? '').trim();
@@ -206,6 +209,7 @@ function normalizeRows(rows, mapping, today) {
         sku,
         productName,
         barcode,
+        category,
         expiryDate,
         daysToExpiry,
         quantity,
@@ -471,6 +475,11 @@ function validateColumnMapping(mapping, availableColumns) {
     errors.push({ row: 0, field: 'barcode', value: mapping.barcode, error: `Column "${mapping.barcode}" does not exist in the file` });
   }
 
+  // category is optional but must reference an existing column if provided
+  if (mapping.category && !availableColumns.includes(mapping.category)) {
+    errors.push({ row: 0, field: 'category', value: mapping.category, error: `Column "${mapping.category}" does not exist in the file` });
+  }
+
   if (errors.length > 0) {
     throw new ImportValidationError(errors);
   }
@@ -540,7 +549,7 @@ async function confirmImport(tenantId, payload, prisma) {
         },
       });
 
-      // 4b. Upsert retained deals
+      // 4b. Upsert retained deals AND products
       for (const deal of previews) {
         await tx.deal.upsert({
           where: {
@@ -576,6 +585,47 @@ async function confirmImport(tenantId, payload, prisma) {
             quantity: deal.quantity,
             status: dealStatus,
             source: 'CSV_IMPORT',
+          },
+        });
+
+        // Also upsert into Product table so imported items appear in product listing
+        // Find or create category if provided
+        let categoryId = null;
+        if (deal.category) {
+          const slug = deal.category.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+          const cat = await tx.category.upsert({
+            where: { tenantId_slug: { tenantId, slug } },
+            create: { tenantId, name: deal.category, slug },
+            update: {},
+          });
+          categoryId = cat.id;
+        }
+
+        await tx.product.upsert({
+          where: { tenantId_sku: { tenantId, sku: deal.sku } },
+          create: {
+            tenantId,
+            categoryId,
+            name: deal.productName,
+            sku: deal.sku,
+            barcode: deal.barcode,
+            originalPrice: Number(deal.originalPrice),
+            discountPct: Number(deal.discountPct),
+            finalPrice: Number(deal.finalPrice),
+            stock: deal.quantity,
+            expiryDate: deal.expiryDate,
+            status: 'ACTIVE',
+          },
+          update: {
+            categoryId: categoryId || undefined,
+            name: deal.productName,
+            barcode: deal.barcode,
+            originalPrice: Number(deal.originalPrice),
+            discountPct: Number(deal.discountPct),
+            finalPrice: Number(deal.finalPrice),
+            stock: deal.quantity,
+            expiryDate: deal.expiryDate,
+            status: 'ACTIVE',
           },
         });
 
