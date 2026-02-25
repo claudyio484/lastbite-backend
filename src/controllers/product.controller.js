@@ -91,8 +91,12 @@ const createProduct = async (req, res) => {
 
     res.status(201).json({ success: true, data: product });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error('Create product error:', err);
+    if (err.code === 'P2002') {
+      const fields = err.meta?.target || [];
+      return res.status(409).json({ success: false, message: `Duplicate value for: ${fields.join(', ')}` });
+    }
+    res.status(500).json({ success: false, message: err.message || 'Server error' });
   }
 };
 
@@ -129,7 +133,12 @@ const updateProduct = async (req, res) => {
 
     res.json({ success: true, data: product });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error('Update product error:', err);
+    if (err.code === 'P2002') {
+      const fields = err.meta?.target || [];
+      return res.status(409).json({ success: false, message: `Duplicate value for: ${fields.join(', ')}` });
+    }
+    res.status(500).json({ success: false, message: err.message || 'Server error' });
   }
 };
 

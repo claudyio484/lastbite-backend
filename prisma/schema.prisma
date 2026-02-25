@@ -74,6 +74,7 @@ enum ProductStatus {
   EXPIRED
   DRAFT
   INACTIVE
+  SOLD_OUT
 }
 
 model Tenant {
